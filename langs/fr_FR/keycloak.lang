@@ -1,0 +1,56 @@
+# Copyright (C) 2017 Mikael Carlavan <contact@mika-carl.fr>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+#
+# Générique
+#
+
+# Module label 'ModuleKeycloakName'
+ModuleKeycloakName = Keycloak
+# Module description 'ModuleKeycloakDesc'
+ModuleKeycloakDesc = Module de connexion Keycloak
+
+#
+# Page d'administration
+#
+KeycloakSetup = Configuration du module
+Settings = Réglages
+KeycloakSetupPage = Page de réglage du module
+KeycloakOptions = Options
+Description = Description
+Value = Valeur
+Action = Action
+DescKEYCLOAK_CLIENT_ID = Client Id
+DescKEYCLOAK_CLIENT_SECRET = Client secret
+DescKEYCLOAK_REDIRECT_URI = URL de redirection
+DescKEYCLOAK_BASE_URL = URL de base
+DescKEYCLOAK_REALM = Realm
+
+#
+# Page À propos
+#
+About = À propos
+KeycloakAbout = À propos du module
+KeycloakAboutPage = Page à propos du module
+KeycloakAboutDescLong = Ce module a été développé par <a href="http://www.mikael-carlavan.fr">Mikael Carlavan</a> pour <a href="http://www.iouston.com">iouston informatique</a>.
+
+# ChangeLog
+ChangeLog = ChangeLog
+ChangeLogVersion = Version
+ChangeLogDate = Date
+ChangeLogUpdates = Modification apportées
+KeycloakFirstVersion = Première version
+
+
