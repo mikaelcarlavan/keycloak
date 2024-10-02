@@ -32,14 +32,52 @@ require_once DOL_DOCUMENT_ROOT . '/user/class/usergroup.class.php';
 
 dol_include_once("/keycloak/class/keycloak.class.php");
 
+
 class ActionsKeycloak
 {
     function beforeLoginAuthentication($parameters, &$object, &$action, $hookmanager)
     {
+        global $db, $conf;
+
+        if (GETPOSTISSET('code')) {
+            $_GET['openid_mode'] = 'keycloak';
+            return 0;
+        } else {
+            $keycloak = new Keycloak($db);
+            $url = $keycloak->getAuthUrl();
+
+            header("Location: ".$url);
+            exit;
+        }
+    }
+
+    // Required fix otherwise bug in style.css.php
+    function afterLogin($parameters, &$object, &$action, $hookmanager)
+    {
+        global $db;
+
+        $_SESSION["dol_screenwidth"] = intval($_SESSION["dol_screenwidth"]);
+        $_SESSION["dol_screenheight"] = intval($_SESSION["dol_screenheight"]);
+
+        return 0;
+    }
+
+    function afterLogout($parameters, &$object, &$action, $hookmanager)
+    {
         global $db;
 
         $keycloak = new Keycloak($db);
-        $url = $keycloak->getAuthUrl();
+        $url = $keycloak->getLogoutUrl();
+
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_destroy();
+        }
+
+
+        unset($_SESSION['dol_login']);
+        unset($_SESSION['dol_entity']);
+        unset($_SESSION['urlfrom']);
+
 
         header("Location: ".$url);
         exit;

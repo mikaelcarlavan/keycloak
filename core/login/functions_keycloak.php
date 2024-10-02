@@ -24,6 +24,8 @@
  */
 
 include_once DOL_DOCUMENT_ROOT.'/core/lib/geturl.lib.php';
+include_once DOL_DOCUMENT_ROOT.'/user/class/usergroup.class.php';
+include_once DOL_DOCUMENT_ROOT.'/core/lib/functions2.lib.php';
 
 /**
  * Check validity of user/password/entity
@@ -34,13 +36,14 @@ include_once DOL_DOCUMENT_ROOT.'/core/lib/geturl.lib.php';
  * @param   int		$entitytotest   Number of instance (always 1 if module multicompany not enabled)
  * @return	string					Login if OK, '' if KO
  */
+
 function check_user_password_keycloak($usertotest, $passwordtotest, $entitytotest)
 {
     global $db, $conf, $langs;
 
     // Force master entity in transversal mode
     $entity = $entitytotest;
-    if (isModEnabled('multicompany') && getDolGlobalString('MULTICOMPANY_TRANSVERSE_MODE')) {
+    if (!empty($conf->multicompany->enabled) && getDolGlobalString('MULTICOMPANY_TRANSVERSE_MODE')) {
         $entity = 1;
     }
 
@@ -61,53 +64,116 @@ function check_user_password_keycloak($usertotest, $passwordtotest, $entitytotes
         // Step 2: turn the authorization code into an access token, using client_secret
         $auth_param = [
             'grant_type'    => 'authorization_code',
-            'client_id'     => $conf->global->MAIN_AUTHENTICATION_OIDC_CLIENT_ID,
-            'client_secret' => $conf->global->MAIN_AUTHENTICATION_OIDC_CLIENT_SECRET,
+            'client_id'     => $conf->global->KEYCLOAK_CLIENT_ID,
+            'client_secret' => $conf->global->KEYCLOAK_CLIENT_SECRET,
             'code'          => $auth_code,
-            'redirect_uri'  => $conf->global->MAIN_AUTHENTICATION_OIDC_REDIRECT_URL
+            'redirect_uri'  => DOL_MAIN_URL_ROOT,
         ];
 
-        $token_response = getURLContent($conf->global->MAIN_AUTHENTICATION_OIDC_TOKEN_URL, 'POST', http_build_query($auth_param));
+        $keycloak = new Keycloak($db);
+
+        $token_response = getURLContent($keycloak->getTokenUrl(), 'POST', http_build_query($auth_param));
         $token_content = json_decode($token_response['content']);
         dol_syslog("functions_keycloak::check_user_password_keycloak /token=".print_r($token_response, true), LOG_DEBUG);
 
         if (property_exists($token_content, 'access_token')) {
             // Step 3: retrieve user info using token
             $userinfo_headers = array('Authorization: Bearer '.$token_content->access_token);
-            $userinfo_response = getURLContent($conf->global->MAIN_AUTHENTICATION_OIDC_USERINFO_URL, 'GET', '', 1, $userinfo_headers);
+            $userinfo_response = getURLContent($keycloak->getUserInfoUrl(), 'GET', '', 1, $userinfo_headers);
+
             $userinfo_content = json_decode($userinfo_response['content']);
 
             dol_syslog("functions_keycloak::check_user_password_keycloak /userinfo=".print_r($userinfo_response, true), LOG_DEBUG);
 
-            // Get the user attribute (claim) matching the Dolibarr login
-            $login_claim = 'email'; // default
-            if (getDolGlobalString('MAIN_AUTHENTICATION_OIDC_LOGIN_CLAIM')) {
-                $login_claim = $conf->global->MAIN_AUTHENTICATION_OIDC_LOGIN_CLAIM;
+            $roles = array();
+            if (isset($userinfo_content->resource_access->tools->roles)) {
+                $roles = $userinfo_content->resource_access->tools->roles;
             }
 
-            if (property_exists($userinfo_content, $login_claim)) {
+
+            $groups = array();
+            if (isset($userinfo_content->resource_access->tools->groups)) {
+                $groups = $userinfo_content->resource_access->tools->groups;
+            }
+
+            $isAdmin = in_array('Admin', $roles);
+            $isUser = in_array('User', $roles);
+
+            if (!$isUser && !$isAdmin) {
+                return false;
+            }
+
+            if (isset($userinfo_content->email)) {
                 // Success: retrieve claim to return to Dolibarr as login
-                $sql = 'SELECT login, entity, datestartvalidity, dateendvalidity';
+                $sql = 'SELECT rowid, login, entity, datestartvalidity, dateendvalidity';
                 $sql .= ' FROM '.MAIN_DB_PREFIX.'user';
-                $sql .= " WHERE login = '".$db->escape($userinfo_content->$login_claim)."'";
+                $sql .= " WHERE email = '".$db->escape($userinfo_content->email)."'";
                 $sql .= ' AND entity IN (0,'.(array_key_exists('dol_entity', $_SESSION) ? ((int) $_SESSION["dol_entity"]) : 1).')';
 
                 dol_syslog("functions_openid::check_user_password_openid", LOG_DEBUG);
 
                 $resql = $db->query($sql);
                 if ($resql) {
-                    $obj = $db->fetch_object($resql);
-                    if ($obj) {
-                        // Note: Test on date validity is done later natively with isNotIntoValidityDateRange() by core after calling checkLoginPassEntity() that call this method
-                        $login = $obj->login;
+                    $num = $db->num_rows($resql);
+                    $user = new User($db);
+
+                    if ($num > 0) {
+                        $obj = $db->fetch_object($resql);
+                        if ($obj) {
+                            // Note: Test on date validity is done later natively with isNotIntoValidityDateRange() by core after calling checkLoginPassEntity() that call this method
+
+                            $user->fetch($obj->rowid);
+
+                            $user->lastname = $userinfo_content->family_name;
+                            $user->firstname = $userinfo_content->given_name;
+                            $user->admin = $isAdmin;
+                            $user->update($user);
+
+                            $login = $user->login;
+                        }
+                    } else {
+                        // Create user ?
+                        if (!empty($conf->global->KEYCLOAK_CREATE_USER)) {
+                            $user->lastname = $userinfo_content->family_name;
+                            $user->firstname = $userinfo_content->given_name;
+                            $user->email = $userinfo_content->email;
+                            $user->login = dol_buildlogin($user->lastname, $user->firstname);
+                            $user->admin = $isAdmin;
+                            $res = $user->create($user);
+
+                            if ($res == -6) { // login already exists, use email instead
+                                $user->login = $user->email;
+                                $user->create($user);
+                            }
+
+                            $login = $user->login;
+                        }
+                    }
+
+                    if ($user->id > 0) {
+                        // Remove roles/groups
+                        $usergroup = new UserGroup($db);
+                        $usergroups = $usergroup->listGroupsForUser($user->id, false);
+                        if (count($usergroups)) {
+                            foreach ($usergroups as $usergroup) {
+                                $user->RemoveFromGroup($usergroup, $user->entity);
+                            }
+                        }
+
+                        // Add roles/groups
+                        if (count($roles)) {
+                            foreach ($roles as $role) {
+                                $usergroup = new UserGroup($db);
+                                if ($usergroup->fetch('', $role, false) > 0) {
+                                    $user->SetInGroup($usergroup, $user->entity);
+                                }
+                            }
+                        }
                     }
                 }
             } elseif ($userinfo_content->error) {
                 // Got user info response but content is an error
                 $_SESSION["dol_loginmesg"] = "Error in OAuth 2.0 flow (".$userinfo_content->error_description.")";
-            } elseif ($userinfo_response['http_code'] == 200) {
-                // Claim does not exist
-                $_SESSION["dol_loginmesg"] = "OpenID Connect claim not found: ".$login_claim;
             } elseif ($userinfo_response['curl_error_no']) {
                 // User info request error
                 $_SESSION["dol_loginmesg"] = "Network error: ".$userinfo_response['curl_error_msg']." (".$userinfo_response['curl_error_no'].")";

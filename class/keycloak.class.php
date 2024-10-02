@@ -104,11 +104,20 @@ class Keycloak extends CommonObject
         return $this->buildAuthUrlFromBase($this->getBaseUrl().'/protocol/openid-connect/auth', $state);
     }
 
-    protected function getTokenUrl()
+    public function getTokenUrl()
     {
         return $this->getBaseUrl().'/protocol/openid-connect/token';
     }
 
+    public function getUserInfoUrl()
+    {
+        return $this->getBaseUrl().'/protocol/openid-connect/userinfo';
+    }
+
+    public function getLogoutUrl()
+    {
+        return $this->getBaseUrl().'/protocol/openid-connect/logout';
+    }
     /**
      * Build the authentication URL for the provider from the given base URL.
      *
@@ -133,7 +142,8 @@ class Keycloak extends CommonObject
 
         $fields = [
             'client_id' => $conf->global->KEYCLOAK_CLIENT_ID,
-            'redirect_uri' => $conf->global->KEYCLOAK_REDIRECT_URI,
+            'redirect_uri' => DOL_MAIN_URL_ROOT,
+            'scope' => 'openid',
             'response_type' => 'code',
         ];
 

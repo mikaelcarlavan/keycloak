@@ -37,7 +37,7 @@ DescKEYCLOAK_CLIENT_SECRET = Client secret
 DescKEYCLOAK_REDIRECT_URI = URL de redirection
 DescKEYCLOAK_BASE_URL = URL de base
 DescKEYCLOAK_REALM = Realm
-
+DescKEYCLOAK_CREATE_USER = Création automatique de l'utilisateur si celui-ci n'existe pas
 #
 # Page À propos
 #
